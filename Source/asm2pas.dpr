@@ -56,15 +56,14 @@ end;
 procedure ASM_PAS(const f, fn:string);
 var
  d : ansistring;
- m2: TAnsiStringListSimple;
+ m1: TAnsiStringListSimple;
 begin
-  m2 := TAnsiStringListSimple.Create;
-  m2.LoadFromFile(f);
-  d := m2.Text;
-  m2.free;
-  m2 := ASM_2_PAS(d);
-  m2.SaveToFile(fn);
-  m2.free;
+  m1 := TAnsiStringListSimple.Create;
+  m1.LoadFromFile(f);
+  d := m1.Text;
+  m1 := ASM_2_PAS(m1, d);
+  m1.SaveToFile(fn);
+  m1.free;
 end;
 procedure duru(const src, indir, outdir:string; opt:byte);
 var
@@ -79,7 +78,7 @@ begin
   else
   begin
     f := copy(src, 1, length(src));
-    p := GetFileNameStr(f);
+    p := GetFileExtStr2(f);
     if p^=#0 then
     begin
       p^ := '.';
@@ -97,16 +96,16 @@ begin
         if (t.dwFileAttributes and FILE_ATTRIBUTE_DIRECTORY<>0) then continue;
         setstring(f, t.cFileName, strlen(t.cFileName));
         fn := copy(f, 1, length(f));
-        dpf(indir, f);
-        dpf(outdir, fn);
-        i := (GetFileNameStr(fn)-pointer(fn));
+        i := (GetFileExtStr2(fn)-pointer(fn));
         setlength(fn, length(fn)+1);
         p := pointer(fn);
-        if p[i]=#0 then p[i] := '.';
+        p[i] := '.';
         p[i+1] := 'p';
         p[i+2] := 'a';
         p[i+3] := 's';
         p[i+4] := 'm';
+        dpf(outdir, fn);
+        dpf(indir, f);
         writeln(f,' -> ',fn);
         ASM_PAS(f, fn);
       until not FindNextFileW(h, t);
@@ -132,6 +131,39 @@ begin
   end;
 end;
 
+function setdir(const indir,s:string):string;
+var
+ d,k,j:string;
+ p:pwidechar;
+ i:integer;
+begin
+  d := indir;
+  k := s;
+  if k='' then k := 'DELIST_';
+  j := d;
+  if j='' then j := getcurrentdir;
+  p := strrscan(pwidechar(j), '\');
+  if p= nil then p := strrscan(pwidechar(j), '/');
+  if p<>nil then
+  begin
+     i := p-pointer(j);
+     if d='' then
+     begin
+      d := copy(j, i+1, length(j));
+      insert(k, d, 2);
+      insert('..', d, 1);
+     end
+     else
+     insert(k, d, i+2);
+  end
+  else
+  begin
+    insert(k, d, 1);
+    insert('..\', d, 1);
+  end;
+  result := d;
+end;
+
 function duro:boolean;
 var
 // o: thandle;
@@ -139,6 +171,7 @@ var
 // x: word;
  indir,outdir:string;
  c,cnt:integer;
+ j,k:integer;
  seg:byte;
  s:string;
  opt:byte;
@@ -172,33 +205,47 @@ begin
     case s[1] of
     '-','/':
        case ord(s[2]) or $20 of
-         ord('d'),ord('i'): begin
-         if length(s) > 2 then
+         ord('d'),ord('i'):
           begin
-            delete(s,1,2);
+            if length(s) > 2 then
+            begin
+              delete(s,1,2);
+            end else
+            begin
+              s := paramstr(c);
+              inc(c);
+            end;
             indir := s;
-          end else
-          begin
-           indir := paramstr(c);
-           inc(c);
+            writeln('indir :', indir);
           end;
-          writeln('indir :', indir);
-         end;
-         ord('o'): begin
-          if length(s) > 2 then
+         ord('o'):
           begin
-            delete(s,1,2);
+            if length(s) > 2 then
+              delete(s,1,2)
+            else
+            begin
+              s := paramstr(c);
+              inc(c);
+            end;
+            if s<>'' then
+            if s[1] = '~' then
+            begin
+              delete(s,1,1);
+              s := setdir(indir, s);
+            end;
             outdir := s;
-          end else
-          begin
-           outdir := paramstr(c);
-           inc(c);
+            writeln('outdir :', outdir);
           end;
-          writeln('outdir :', outdir);
-         end;
          ord('r'): begin
-                      if length(s)=2 then opt := opt or 1
-                      else if s[3]='-' then opt := opt and not 1;
+                      if length(s)=2 then
+                        opt := opt or 3
+                      else
+                      if length(s)=3 then
+                      case ord(s[3]) or $20 of
+                      ord('-') or $20 : opt := opt and not 1;
+                      ord('r') : opt := opt or 3;
+                      ord('s') : opt := (opt and not 2) or 1;
+                      end;
                       writeln('opt : ', opt and 1);
                    end;
          ord('s'): begin
@@ -237,6 +284,13 @@ begin
     else
       opt := opt or $40;
       writeln(s);
+      k := GetFileName(s)-pointer(s);
+      if k <> 0 then
+      begin
+         j := k;
+         indir := copy(s, 1, k-1);
+         delete(s, 1, j);
+      end;
       duru(s, indir, outdir, opt);
     end;
   until c>cnt;
