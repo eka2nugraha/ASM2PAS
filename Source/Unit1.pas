@@ -13,7 +13,7 @@ uses
 type
   TForm1 = class(TForm)
     Memo1: TMemo;
-    Memo2: TSynMemo;
+    Memo2: TSynEdit;
     SynPas: TSynPasSyn;
     MM: TMainMenu;
     File1: TMenuItem;
@@ -78,12 +78,17 @@ type
 var
   Form1: TForm1;
 
-function GetFileNameStr(var str:string):pwidechar;
+function GetFileExt(const str:string):pwidechar;
+function GetFileName(str:pansichar):pansichar;overload;
+function GetFileName(const str:string):pwidechar;overload;
+function GetFileExtStr(var str:string):pwidechar;
+function GetFileExtStr2(var str:string):pwidechar;
+
 function GetIniName:String;
 function GetDirName:String;
 function GetCDM:TForm1;
 function getsyscolor(c: TColor; tc: tcontrol = nil): TColor;
-function ASM_2_PAS(var src: ansistring):TAnsiStringListSimple;
+function ASM_2_PAS(m1:TAnsiStringListSimple; var src: ansistring):TAnsiStringListSimple;
 function openini:TIniFile;
 var
   CodeSeg,DataSeg,BssSeg: String;
@@ -97,41 +102,122 @@ function GetCDM:TForm1;
 begin
   result := Form1;
 end;
-function GetFileNameStr(var str:string):pwidechar;
+
+function GetFileName(str:pansichar):pansichar;overload;
 var
- i: integer;
+p:pansichar;
+c:ansichar;
 begin
-  result := system.sysutils.strrscan(pwidechar(str),char('\'));
-  if result = nil then
-  begin
-      result := system.sysutils.strrscan(pwidechar(str),char('/'));
-      if result = nil then result := pwidechar(str);
-  end;
-  result := system.sysutils.strrscan(result,char('.'));
+   result := str;
+   if result = nil then
+     exit;
+   p := result;
+   result := system.ansistrings.strend(result);
+   while result <> p do
+   begin
+      dec(result);
+      c := result^;
+      case c of
+      '/','\',':' : begin
+        inc(result);
+        break;
+      end;
+      end;
+   end;
+end;
+
+function GetFileName(const str:string):pwidechar;overload;
+var
+p:pwidechar;
+c:char;
+begin
+   result := pwidechar(pointer(str));
+   if result = nil then
+     exit;
+   p := result;
+   result := system.sysutils.strend(result);
+   while result <> p do
+   begin
+      dec(result);
+      c := result^;
+      case c of
+      '/','\',':' : begin
+        inc(result);
+        break;
+      end;
+      end;
+   end;
+end;
+
+function GetFileExt(const str:string):pwidechar;
+var
+p,s:pwidechar;
+c:char;
+begin
+   result := pwidechar(pointer(str));
+   if result = nil then
+     exit;
+   p := result;
+   s := system.sysutils.strend(result);
+   while s <> p do
+   begin
+      dec(s);
+      c := s^;
+      case c of
+      '/','\',':' : break;
+      '.' : begin
+                result := s;
+                exit;
+            end;
+      end;
+   end;
+   result := nil;
+end;
+
+function GetFileExtStr(var str:string):pwidechar;
+begin
+  result := GetFileExt(str);
   if result=nil then
   begin
     setlength(str, length(str)+4);
-    result := system.sysutils.strend(pwidechar(str));
+    result := system.sysutils.strend(pwidechar(pointer(str)));
     result^ := #0;
-  end
-  else
+  end;
+end;
+
+function GetFileExtStr2(var str:string):pwidechar;
+var
+ i: integer;
+ x:integer;
+ j:integer;
+begin
+  result := GetFileExtStr(str);
+  if result^ <> #0 then
   begin
     i := 4-system.SysUtils.StrLen(result);
     if i > 0 then
-     setlength(str, length(str)+i);
+    begin
+     x := result-pointer(str);
+     j := length(str);
+     setlength(str, j+i);
+     str[j+1] := #0;
+     result := @pwidechar(pointer(str))[x];
+    end;
   end;
 end;
+
 function GetIniName:String;
 var
  p : pwidechar;
 begin
   result := Application.ExeName;
-  p := GetFileNameStr(result);
-  if p^=#0 then p^ := '.';
+  p := GetFileExtStr2(result);
+  p^ := '.';
   p[1] := 'i';
   p[2] := 'n';
   p[3] := 'i';
 end;
+
 function GetDirName:String;
 var
  r : string;
@@ -675,8 +761,9 @@ begin
       i := pos(ansistring(#13), c2, i);
       if i <> 0 then delete(c2, a, i-a);
     end;
+    
     c := c2[2];
-    if c in a1to then j := 0;
+//    if c in a1to then j := 0;
 
     j := 0;
     i := 2;
@@ -1677,12 +1764,27 @@ label
  jx, lx, mx, px, pax, pdx, pcx, rx, ox, wx, xx, xx2, zy, yz, zz;
 begin
 //    m1.IndexOf('CODE            segment para public '''CODE''' use32')
+  bd := 0;
+  l := 20;
+  repeat
+    c0 := m1.Strings[l];
+    inc(l);
+    if pos(ansistring('; Format'), c0)=1 then
+    if pos(ansistring('64'), c0, 10)=1 then
+    begin
+        bd := 64;
+        break;
+    end;
+  until l>200;
+
   l := m1.count;
   repeat
     if l <= 10 then exit;
     dec(l);
     c0 := m1.Strings[l];
     if length(c0)<=25 then continue;
+    if pos(ansistring('_tex'), c0)=1 then
+    asm nop end;
     i := pinteger(c0)^ or $20202020;
     if i <> seg then
     case i of
@@ -1691,7 +1793,7 @@ begin
       ord('_')+$20+(ord('t') shl 8)+(ord('e') shl 16)+(ord('x') shl 24): ;
       else continue;
     end;
-    if c0[7]=' ' then break;
+    if pos(ansistring(' segment'),c0)<>0  then break;
   until false;
 
   repeat
@@ -1704,7 +1806,6 @@ begin
   tconst := TAnsiStringListSimple.Create;
   tpas := TAnsiStringListSimple.Create;
   tvar := TAnsiStringList.Create;
-  bd := 0;
   beginproc := 0;
   beginasm := 0;
   word(prm) := 0;
@@ -1762,17 +1863,33 @@ begin
       end;
     end;
 
+//    if pos(ansistring('align'), c2)=1 then goto ignore;
+//    if pos(ansistring('assume'), c2)=1 then goto ignore;
     if pos(ansistring('start'), c2) <> 0 then
     begin
       bd := bd or (8+4+1);
       word(prm) := 0;
       goto zy;
     end;
-{
 
- for $1000
- 
-}
+nxt:
+    i := pos(ansistring('ffset '), c2);
+    if i <> 0 then
+    begin
+      c4 := copy(c2, i+6, 20);
+
+      if dloc.d[0] <> ord('l')+(ord('o')shl 8)+(ord('c')shl 16)+(ord('_') shl 24) then
+      begin
+        i := pos(ansistring(' '), c4);
+        if i <> 0 then
+          setlength(c4, i-1);
+        if tconst.IndexOf(c4)=-1 then
+          tconst.Add(c4);
+      end;
+    end;
+    {
+    for $1000
+    }
 xx:
     if c2[1]=';' then
     begin
@@ -1796,11 +1913,10 @@ addcom:
          insert('/', c2, aa);
       end;
     end;
-{
 
- for $1000
- 
-}
+{
+    for $1000
+ }
 
 xy:
     c2 := '  '+c2;
@@ -1846,16 +1962,13 @@ ignore:
 end;
 
 
-function ASM_2_PAS(var src: ansistring):TAnsiStringListSimple;
+function ASM_2_PAS(m1:TAnsiStringListSimple; var src: ansistring):TAnsiStringListSimple;
 var
  ts,td : TAnsiStringList;
- m1: TAnsiStringListSimple;
  datastart, conststart, xl: integer;
  o:ansistring;
 begin
  result := TAnsiStringListSimple.Create;
- m1 := TAnsiStringListSimple.Create;
- m1.Text := src;
  ts := TAnsiStringList.Create;
  td := TAnsiStringList.Create;
  INIT_DATA(datastart, src, xl, m1, td, toint(dataseg));
@@ -1881,7 +1994,7 @@ procedure TForm1.FileOpenExecute(Sender: TObject);
 var
  s : string;
  d : ansistring;
- m2: TAnsiStringListSimple;
+ m1,m2: TAnsiStringListSimple;
 begin
     with TFileOpenDialog.Create(Self) do
     begin
@@ -1916,7 +2029,9 @@ begin
     d := ansitoutf8(s);
     s := '';
     label1.Caption := '...';
-    m2 := ASM_2_PAS(d);
+    m1 := TAnsiStringListSimple.Create;
+    m1.Text := d;
+    m2 := ASM_2_PAS(m1, d);
     d := m2.Text;
     s := utf8toAnsi(d);
     d := '';
@@ -2178,21 +2293,23 @@ end;
 procedure TForm1.OptionEditorExecute(Sender: TObject);
 var
 i: integer;
+sM:integer;
 s: string;
 f: string;
 begin
  With TEditorOpt.Create(Self) do
  begin
-  if showModal = mrOK then
+  sM := showmodal;
+  i := CB1.ItemIndex;
+  s := CB1.Items[i];
+  free;
+  if sM = mrOK then
   begin
-    i := CB1.ItemIndex;
     if i>=0 then
     begin
-      s := CB1.Items[i];
       f := TStyleManager.ActiveStyle.Name;
       if s<>f then
       begin
-        free;
         try
           if s='' then
              TStyleManager.SetStyle(TStyleManager.SystemStyle)
@@ -2202,18 +2319,16 @@ begin
           WritePrivateProfileString('Style', 'Name', pointer(s), pointer(f));
         except
         end;
-        with memo2 do
-        begin
-         Gutter.Font.Color := EditorGutterTextColor;
-         Gutter.ModificationColorModified := EditorModifiedColor;
-         Gutter.ModificationColorSaved := EditorSavedColor;
-         ActiveLineColor := EditorActiveLineColor;
-        end;
       end;
-      exit;
+    end;
+    with memo2 do
+    begin
+      Gutter.Font.Color := EditorGutterTextColor;
+      Gutter.ModificationColorModified := EditorModifiedColor;
+      Gutter.ModificationColorSaved := EditorSavedColor;
+      ActiveLineColor := EditorActiveLineColor;
     end;
   end;
-  free;
  end;
 end;
 
